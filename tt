@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+
+import argparse, os, datetime, subprocess
+from termcolor import colored, cprint
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-s', '--start', action='store', const='none', nargs='?')
+parser.add_argument('-e', '--end', action='store', const='none', nargs='?')
+parser.add_argument('-n', '--new-session', action='store_true')
+parser.add_argument('-m', '--modify', action='store_true')
+parser.add_argument('-d', '--debug', action = 'store_true')
+parser.add_argument('-p', '--parse-latest', action = 'store_true')
+args = parser.parse_args()
+
+def get_latest_session_index():
+  i = 1
+  while 1:
+    p = '{}/timesheets/{}.tsh'.format(os.path.dirname(__file__), i)
+    if os.path.exists(p):
+      i += 1
+      continue
+    return i-1
+
+def get_new_session_index():
+  i = 1
+  while 1:
+    p = '{}/timesheets/{}.tsh'.format(os.path.dirname(__file__), i)
+    if os.path.exists(p):
+      i += 1
+      continue
+    return i
+
+def get_latest_session_path():
+  i = get_latest_session_index()
+  return '{}/timesheets/{}.tsh'.format(os.path.dirname(__file__), i)
+
+def get_new_session_path():
+  i = get_new_session_index()
+  return '{}/timesheets/{}.tsh'.format(os.path.dirname(__file__), i)
+
+def get_today_string():
+  return '{0:%d%m%y}'.format(datetime.datetime.now())
+
+def get_today_date():
+  return parse_date_string(get_today_string())
+
+def get_current_time():
+  return '{0:%H%M}'.format(datetime.datetime.now()) 
+
+def parse_date_string(ds):
+  return datetime.datetime.strptime(ds, '%d%m%y')
+
+def last_action():
+  with open(get_latest_session_path()) as f:
+    raw = f.read().strip()
+    last_action = None
+    for line in raw.split('\n'):
+      if line == '': continue
+      last_action = line.split()[0].upper()
+
+    if last_action == None: return None
+    return last_action
+
+def check_new_date():
+  with open(get_latest_session_path()) as f:
+    raw = f.read().strip()
+    current_date = None
+    for line in raw.split('\n'):
+      if line == '': continue
+      if line.split()[0].upper() == 'DATE':
+        current_date = parse_date_string(line.split()[1])
+
+    if current_date == None: return True
+    return get_today_date() > current_date 
+
+def parse(t):
+  ints =  [int(s) for s in t if s.isdigit()]
+  if len(ints) == 1:
+    ints.insert(0, 0)
+    ints.append(0)
+    ints.append(0)
+  if len(ints) == 2:
+    ints.append(0)
+    ints.append(0)
+  if len(ints) == 3:
+    ints.insert(0, 0)
+  return ints
+
+def get_diff(t1, t2):
+  t1_hour = int(str(t1[0]) + str(t1[1]))
+  t2_hour = int(str(t2[0]) + str(t2[1]))
+
+  t1_minute = int(str(t1[2]) + str(t1[3]))
+  t2_minute = int(str(t2[2]) + str(t2[3]))
+
+  hour_diff = (t2_hour - t1_hour) * 60
+  total_diff = t2_minute - t1_minute + hour_diff 
+  return total_diff
+
+if args.debug:
+  print('Latest Index', get_latest_session_index())
+  print('Latest Path', get_latest_session_path())
+  print('Today Is', get_today_string()) 
+  print('a.k.a.', parse_date_string(get_today_string()))
+
+if args.modify:
+  subprocess.call(['vim', get_latest_session_path()])
+  quit()
+
+if args.new_session:
+  new_path = get_new_session_path()
+  print('Creating new session at {}'.format(new_path))
+  with open(new_path, 'w') as f:
+    pass
+
+if args.start:
+  current_time = args.start if args.start != 'none' else get_current_time()
+  with open(get_latest_session_path(), 'a') as f:
+    if check_new_date():
+      print('Adding date', get_today_string())
+      f.write('\nDATE {}\n'.format(get_today_string()))
+    print('Adding start', current_time)
+    f.write('STARTED {}\n'.format(current_time)) 
+
+if args.end:
+  current_time = args.end if args.end != 'none' else get_current_time()
+  with open(get_latest_session_path(), 'a') as f:
+    print('Adding end', current_time)
+    f.write('ENDED {}\n'.format(current_time)) 
+
+if args.parse_latest:
+
+  with open(get_latest_session_path()) as f:
+    raw = f.read()
+    ls = []
+
+    date = None
+    minutes_so_far = -1
+    start = None
+    carry_over = 0
+    d = {}
+
+    lines = raw.strip().lower().split('\n')
+    print('')
+    total_hours = 0
+    
+    for line in lines:
+      
+      if 'date' in line:
+        if start != None:
+          diff = get_diff(start, [2,4,0,0])
+          if diff > 12 * 60:
+            diff = get_diff(start, [1,2,0,0])
+          minutes_so_far += diff
+
+        if date != None:
+          d['hours'] = minutes_so_far // 60
+          total_hours += d['hours']
+          carry_over = minutes_so_far % 60
+          d['carry_over'] = carry_over 
+          start_str = ''.join(str(i) for i in d['start'])
+          print('started at {} for {} hours.'.format(colored(start_str, 'green'), colored(d['hours'], 'green')))
+          if args.debug:
+            print(d)
+          print('')
+          ls.append(d)
+
+        date = line.split()[1]
+        print('=========== {} ==========='.format(colored(date, 'cyan')))
+        d['date'] = date
+        minutes_so_far = carry_over 
+        start = None
+        d = {}
+
+      if 'start' in line:
+        if start != None:
+          cprint('Double start detected!', 'red')
+          quit()
+        start = parse(line)
+        if 'start' not in d:
+          d['start'] = start
+
+      if 'end' in line:
+        if start == None:
+          start = [0,0,0,0]
+          if 'start' not in d:
+            d['start'] = start
+        minutes_so_far += get_diff(start, parse(line))
+        start = None
+    
+    if start != None:
+      diff = get_diff(start, [2,4,0,0])
+      if diff > 12 * 60:
+        diff = get_diff(start, [1,2,0,0])
+      minutes_so_far += diff
+
+    if date != None:
+      d['hours'] = minutes_so_far // 60
+      total_hours += d['hours']
+      carry_over = minutes_so_far % 60
+      d['carry_over'] = carry_over
+      start_str = ''.join(str(i) for i in d['start'])
+      print('started at {} for {} hours.'.format(colored(start_str, 'green'), colored(d['hours'], 'green')))
+      if args.debug:
+        print(d)
+      print('{} minutes were carried over.'.format(colored(d['carry_over'], 'green')))
+      print('\nTotal work recorded: {} hours.\n'.format(colored(total_hours, 'green')))
+      ls.append(d)
+
+
