@@ -139,6 +139,7 @@ if args.parse_latest:
     start = None
     carry_over = 0
     d = {}
+    warn_max_time_exceeded = False
 
     lines = raw.strip().lower().split('\n')
     print('')
@@ -160,6 +161,8 @@ if args.parse_latest:
           d['carry_over'] = carry_over 
           start_str = ''.join(str(i) for i in d['start'])
           print('started at {} for {} hours.'.format(colored(start_str, 'green'), colored(d['hours'], 'green')))
+          if d['hours'] > 6:
+            warn_max_time_exceeded = True
           if args.debug:
             print(d)
           print('')
@@ -201,10 +204,18 @@ if args.parse_latest:
       d['carry_over'] = carry_over
       start_str = ''.join(str(i) for i in d['start'])
       print('started at {} for {} hours.'.format(colored(start_str, 'green'), colored(d['hours'], 'green')))
+      if d['hours'] > 6:
+        warn_max_time_exceeded = True
       if args.debug:
         print(d)
       print('{} minutes were carried over.'.format(colored(d['carry_over'], 'green')))
-      print('\nTotal work recorded: {} hours.\n'.format(colored(total_hours, 'green')))
+      print('\nTotal work recorded: {} hours.'.format(colored(total_hours, 'green')))
+      
+      if warn_max_time_exceeded:
+        print(colored('WARNING:', 'red'), 'max time per day exceeded. please add breaks.')
+
+      print('')
+
       ls.append(d)
 
 
